@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Piadavision 4000 — a TV da piada</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* =========================================================
+   PIADAVISION 4000 — uma TV de tubo que transmite piadas.
+   Cada canal é uma rota REST diferente da official-joke-api.
+   ========================================================= */
+:root{
+  --sala:#0D0A07;
+  --abajur:#31220F;
+  --madeira-a:#79522B; --madeira-b:#5E3D1E; --madeira-c:#6E4A26;
+  --baquelite:#251F19;
+  --tecla:#EFE5CE; --tecla-tinta:#2A231B;
+  --rotulo:#D9CCB0;
+  --fosforo:#57FF7A;           /* OSD verde de menu de TV */
+  --legenda:#F4F4F4;
+  --punch:#FFE14D;
+  --alerta:#FF4D4D;
+
+  --tvfonte:"VT323",monospace;                 /* tudo que aparece NA tela   */
+  --equipamento:"Chakra Petch",system-ui,sans-serif; /* rótulos do aparelho */
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+button{font:inherit}
+
+body{
+  min-height:100dvh;
+  background:radial-gradient(70% 55% at 50% 8%, var(--abajur) 0%, rgba(49,34,15,0) 60%), var(--sala);
+  color:var(--rotulo);
+  font-family:var(--equipamento);
+  display:flex;flex-direction:column;align-items:center;gap:1.5rem;
+  padding:clamp(3.5rem,8vw,5.5rem) 1rem 3rem;
+}
+
+.conjunto{width:min(100%,58rem);position:relative}
+
+/* antena em V */
+.antena{position:absolute;left:50%;top:-1px;width:0;height:0;z-index:0}
+.antena span{
+  position:absolute;bottom:0;left:-2px;width:4px;height:clamp(3.2rem,9vw,5.5rem);
+  background:linear-gradient(90deg,#8d8d8d,#d9d9d9 45%,#7a7a7a);
+  border-radius:99px;transform-origin:bottom center;
+}
+.antena span:first-child{transform:rotate(-26deg)}
+.antena span:last-child{transform:rotate(26deg)}
+.antena::after{
+  content:"";position:absolute;left:-11px;bottom:-8px;width:22px;height:14px;
+  border-radius:8px 8px 3px 3px;background:#1c1712;border:1px solid #000;
+}
+
+/* ---------- gabinete ---------- */
+.tv{
+  position:relative;z-index:1;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.09), rgba(0,0,0,.28)),
+    repeating-linear-gradient(98deg, var(--madeira-c) 0 7px, var(--madeira-b) 7px 11px, var(--madeira-a) 11px 18px);
+  border:1px solid #33220F;
+  border-radius:26px;
+  padding:clamp(1rem,3vw,1.7rem);
+  display:grid;grid-template-columns:minmax(0,1fr) 13.5rem;gap:clamp(1rem,2.5vw,1.5rem);
+  box-shadow:0 40px 80px -30px rgba(0,0,0,.9), inset 0 2px 0 rgba(255,255,255,.12);
+}
+.tv::before,.tv::after{
+  content:"";position:absolute;bottom:-15px;width:3.2rem;height:15px;
+  background:#1E1610;border:1px solid #000;border-top:none;border-radius:0 0 8px 8px;
+}
+.tv::before{left:10%} .tv::after{right:10%}
+
+/* ---------- tela ---------- */
+.moldura{
+  background:#161311;border-radius:20px;
+  padding:clamp(.7rem,1.8vw,1.1rem);
+  box-shadow:inset 0 0 0 1px #000, inset 0 6px 18px rgba(0,0,0,.8);
+}
+.tela{
+  position:relative;aspect-ratio:4/3;overflow:hidden;
+  background:#020202;border-radius:5%/6%;
+  container-type:size;
+  box-shadow:inset 0 0 60px rgba(0,0,0,.9);
+}
+
+.quadro{position:absolute;inset:0;transform-origin:50% 50%}
+.quadro.zap{animation:zap .3s ease-out}
+.quadro.ligando{animation:ligar .5s cubic-bezier(.15,.85,.3,1) both}
+.quadro.desligando{animation:desligar .35s cubic-bezier(.7,0,.9,.4) both}
+@keyframes ligar{0%{transform:scale(1,.004);filter:brightness(12)}55%{transform:scale(1,.02);filter:brightness(6)}100%{transform:none;filter:none}}
+@keyframes desligar{0%{transform:none;filter:none}60%{transform:scale(1,.015);filter:brightness(7)}100%{transform:scale(.001,.002);filter:brightness(14)}}
+@keyframes zap{0%{transform:scale(1,.05);filter:brightness(5)}45%{transform:scale(1.01,1.02)}100%{transform:none;filter:none}}
+
+#chuvisco{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;display:none}
+#tela[data-estado="sintonizando"] #chuvisco,
+#tela[data-estado="semsinal"] #chuvisco{display:block}
+
+.tvpainel{position:absolute;inset:0;display:none}
+#tela[data-estado="bandeiras"]   .tvpainel--bandeiras{display:flex;flex-direction:column}
+#tela[data-estado="sintonizando"].tela .tvpainel--sintonizando{display:flex}
+#tela[data-estado="exibindo"]    .tvpainel--exibindo{display:block}
+#tela[data-estado="semsinal"]    .tvpainel--semsinal{display:flex}
+
+/* cartela de barras coloridas (estado ocioso) */
+.bandeiras{
+  flex:1;
+  background:linear-gradient(90deg,
+    #c8c8c8 0 14.28%, #c8c821 14.28% 28.57%, #21c8c8 28.57% 42.85%,
+    #21c821 42.85% 57.14%, #c821c8 57.14% 71.42%, #c82121 71.42% 85.71%, #2121c8 85.71% 100%);
+}
+.bandeiras__faixa{
+  height:32%;background:#050505;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2cqh;
+}
+.tv-texto{font-family:var(--tvfonte);color:var(--legenda);letter-spacing:.06em}
+.bandeiras__nome{font-size:16px;font-size:7.5cqi;color:var(--legenda)}
+.bandeiras__dica{font-size:12px;font-size:4cqi;color:var(--fosforo);animation:respira 1.6s ease-in-out infinite}
+@keyframes respira{50%{opacity:.35}}
+
+/* sintonizando */
+.tvpainel--sintonizando{flex-direction:column;align-items:center;justify-content:center;gap:2.5cqh}
+.faixa-preta{background:rgba(0,0,0,.78);padding:.5cqh 2cqi}
+
+/* transmissão */
+.vivo{
+  position:absolute;top:4cqh;left:4cqi;display:flex;align-items:center;gap:1.4cqi;
+  font-family:var(--tvfonte);font-size:12px;font-size:4cqi;color:var(--legenda);
+  background:rgba(0,0,0,.6);padding:.4cqh 1.6cqi;
+}
+.vivo i{width:1.8cqi;height:1.8cqi;border-radius:50%;background:var(--alerta);animation:respira 1s steps(1,end) infinite}
+.legendas{position:absolute;left:5cqi;right:5cqi;bottom:9cqh;text-align:center}
+.cap{
+  display:inline;font-family:var(--tvfonte);color:var(--legenda);
+  font-size:16px;font-size:5.4cqi;line-height:1.45;
+  background:rgba(0,0,0,.78);padding:.1em .38em;
+  box-decoration-break:clone;-webkit-box-decoration-break:clone;
+  text-shadow:1px 0 rgba(255,60,90,.35), -1px 0 rgba(60,180,255,.35);
+}
+.pausaTv{margin:2.2cqh 0;font-family:var(--tvfonte);font-size:5cqi;color:var(--legenda);visibility:hidden}
+.pausaTv[data-viva="true"]{visibility:visible;animation:respira .9s steps(1,end) infinite}
+.cap--punch{
+  color:var(--punch);font-size:18px;font-size:6.6cqi;
+  opacity:0;transform:translateY(30%);
+  transition:opacity .22s steps(2,end), transform .22s steps(2,end);
+}
+.cap--punch.no-ar{opacity:1;transform:none}
+.fichaTv{
+  position:absolute;right:4cqi;bottom:3cqh;
+  font-family:var(--tvfonte);font-size:10px;font-size:3.4cqi;color:var(--fosforo);
+  text-shadow:0 0 8px rgba(87,255,122,.6);
+}
+
+/* sem sinal */
+.tvpainel--semsinal{flex-direction:column;align-items:center;justify-content:center;gap:2.5cqh}
+.semsinal__titulo{font-family:var(--tvfonte);font-size:22px;font-size:9cqi;color:var(--punch);background:rgba(0,0,0,.8);padding:.4cqh 2.4cqi}
+
+/* OSD */
+.osd{position:absolute;font-family:var(--tvfonte);color:var(--fosforo);text-shadow:0 0 10px rgba(87,255,122,.7);z-index:8;pointer-events:none}
+.osd--canal{top:3.5cqh;right:4cqi;font-size:18px;font-size:7cqi}
+.osd--aviso{top:3.5cqh;left:50%;transform:translateX(-50%);font-size:12px;font-size:4.2cqi;opacity:0;transition:opacity .25s ease}
+.osd--aviso[data-on="true"]{opacity:1}
+#tela[data-estado="desligada"] .osd{display:none}
+
+/* camadas de vidro */
+.scan,.vinheta,.reflexo{position:absolute;inset:0;pointer-events:none}
+.scan{display:none;z-index:5;background:repeating-linear-gradient(0deg, rgba(0,0,0,.25) 0 1px, transparent 1px 3px);mix-blend-mode:multiply}
+#tela:not([data-estado="desligada"]) .scan{display:block}
+.vinheta{z-index:6;background:radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,.62) 100%)}
+.reflexo{z-index:7;background:linear-gradient(115deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.025) 30%, transparent 46%)}
+
+/* ---------- painel de controles ---------- */
+.painel{
+  background:var(--baquelite);border:1px solid #000;border-radius:16px;
+  padding:1.1rem 1rem 1.2rem;
+  display:flex;flex-direction:column;gap:.9rem;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+}
+.marca{font-weight:700;font-size:.95rem;letter-spacing:.06em;color:var(--tecla);text-align:center}
+.marca span{color:var(--punch)}
+.grade{
+  height:2.4rem;border-radius:8px;
+  background:repeating-linear-gradient(90deg, #171310 0 3px, #0a0806 3px 6px);
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.8);
+}
+.rotulo{font-size:.58rem;letter-spacing:.24em;text-transform:uppercase;color:#8E8069;text-align:center}
+
+.chave{
+  display:flex;align-items:center;justify-content:center;gap:.5rem;
+  background:linear-gradient(180deg,#3A322A,#241F19);
+  color:var(--tecla);border:1px solid #000;border-radius:10px;
+  padding:.7rem;font-weight:700;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+  cursor:pointer;
+}
+.chave i{width:.6rem;height:.6rem;border-radius:50%;background:#4A3F33;flex:none}
+.painel[data-ligada="true"] .chave i{background:var(--alerta);box-shadow:0 0 8px var(--alerta)}
+.chave:focus-visible{outline:2px solid var(--tecla);outline-offset:3px}
+
+.canais{display:grid;grid-template-columns:1fr 1fr;gap:.55rem}
+.teclacanal,.miuda,.proxima{
+  background:linear-gradient(180deg,#FBF3DF,#E4D8BC);
+  color:var(--tecla-tinta);border:1px solid #90815F;border-radius:9px;
+  cursor:pointer;box-shadow:0 3px 0 #7B6C4C;
+  transition:transform .08s ease, box-shadow .08s ease, opacity .2s ease;
+}
+.teclacanal:active,.miuda:active,.proxima:active{transform:translateY(3px);box-shadow:0 0 0 #7B6C4C}
+.teclacanal:focus-visible,.miuda:focus-visible,.proxima:focus-visible{outline:2px solid var(--tecla);outline-offset:3px}
+
+.teclacanal{padding:.5rem .3rem;font-weight:700;font-size:1rem;line-height:1.1}
+.teclacanal span{display:block;font-size:.52rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#6C5E43}
+.teclacanal[aria-pressed="true"]{background:linear-gradient(180deg,#CDbf9d,#B8A987);box-shadow:0 0 0 #7B6C4C;transform:translateY(3px)}
+
+.proxima{padding:.85rem;font-weight:700;font-size:.85rem;letter-spacing:.12em;text-transform:uppercase}
+.proxima:disabled{opacity:.5;cursor:progress}
+
+.miudas{display:grid;grid-template-columns:repeat(3,1fr);gap:.55rem}
+.miuda{padding:.5rem .2rem;font-weight:700;font-size:.66rem;letter-spacing:.1em}
+.miuda[aria-pressed="true"]{background:linear-gradient(180deg,#CDbf9d,#B8A987)}
+
+.contadorTv{font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:#8E8069;text-align:center}
+.contadorTv b{color:var(--tecla);font-weight:700}
+
+/* aparelho desligado: teclas apagadas, menos a de energia */
+.painel[data-ligada="false"] .soquando{opacity:.35;pointer-events:none}
+
+.nota{
+  font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;
+  color:#7A6C55;text-align:center;line-height:2;max-width:40rem;
+}
+.nota b{color:var(--rotulo);font-weight:500}
+
+@media (max-width:860px){
+  .tv{grid-template-columns:1fr}
+  .painel{flex-direction:column}
+  .canais{grid-template-columns:repeat(4,1fr)}
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+  .cap--punch{opacity:1;transform:none}
+  .cap--punch:not(.no-ar){opacity:0}
+}
+</style>
+</head>
+<body>
+
+<div class="conjunto">
+  <div class="antena" aria-hidden="true"><span></span><span></span></div>
+
+  <div class="tv">
+
+    <div class="moldura">
+      <div class="tela" id="tela" data-estado="desligada">
+        <div class="quadro" id="quadro">
+          <canvas id="chuvisco" width="192" height="144" aria-hidden="true"></canvas>
+
+          <section class="tvpainel tvpainel--bandeiras" aria-hidden="true">
+            <div class="bandeiras"></div>
+            <div class="bandeiras__faixa">
+              <p class="tv-texto bandeiras__nome">A TV DA PIADA</p>
+              <p class="tv-texto bandeiras__dica">ESCOLHA UM CANAL</p>
+            </div>
+          </section>
+
+          <section class="tvpainel tvpainel--sintonizando">
+            <p class="tv-texto faixa-preta" id="statusTv" style="font-size:16px;font-size:5.5cqi">SINTONIZANDO…</p>
+            <p class="tv-texto faixa-preta" id="subStatus" style="font-size:12px;font-size:3.8cqi;color:var(--fosforo)"></p>
+          </section>
+
+          <section class="tvpainel tvpainel--exibindo">
+            <p class="vivo"><i aria-hidden="true"></i>AO VIVO</p>
+            <div class="legendas" aria-live="polite">
+              <p><span class="cap" id="legSetup"></span></p>
+              <p class="pausaTv" id="pausaTv" aria-hidden="true">● ● ●</p>
+              <p><span class="cap cap--punch" id="legPunch"></span></p>
+            </div>
+            <p class="fichaTv" id="fichaTv"></p>
+          </section>
+
+          <section class="tvpainel tvpainel--semsinal">
+            <p class="semsinal__titulo">SEM SINAL</p>
+            <p class="tv-texto faixa-preta" id="motivoFalha" style="font-size:12px;font-size:4cqi;max-width:80%;text-align:center"></p>
+            <p class="tv-texto" style="font-size:11px;font-size:3.6cqi;color:var(--fosforo)">APERTE PRÓXIMA PARA TENTAR DE NOVO</p>
+          </section>
+        </div>
+
+        <p class="osd osd--canal" id="osdCanal">CH --</p>
+        <p class="osd osd--aviso" id="osdAviso"></p>
+
+        <div class="scan" aria-hidden="true"></div>
+        <div class="vinheta" aria-hidden="true"></div>
+        <div class="reflexo" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <aside class="painel" id="painelTv" data-ligada="false" aria-label="Controles da televisão">
+      <p class="marca">PIADAVISION <span>4000</span></p>
+      <div class="grade" aria-hidden="true"></div>
+
+      <button class="chave" id="energia" type="button" aria-pressed="false"><i aria-hidden="true"></i>Liga · Desliga</button>
+
+      <p class="rotulo">canais · rotas da api</p>
+      <div class="canais">
+        <button class="teclacanal soquando" type="button" data-canal="0" aria-pressed="false">1<span class="etiqueta">geral</span></button>
+        <button class="teclacanal soquando" type="button" data-canal="1" aria-pressed="false">2<span class="etiqueta">prog.</span></button>
+        <button class="teclacanal soquando" type="button" data-canal="2" aria-pressed="false">3<span class="etiqueta">toc-toc</span></button>
+        <button class="teclacanal soquando" type="button" data-canal="3" aria-pressed="false">4<span class="etiqueta">misto</span></button>
+      </div>
+
+      <button class="proxima soquando" id="proxima" type="button">Próxima ▸</button>
+
+      <div class="miudas">
+        <button class="miuda soquando" id="sap" type="button" aria-pressed="false" title="Alterna português / original">SAP</button>
+        <button class="miuda soquando" id="voz" type="button" title="Lê a piada em voz alta">VOZ</button>
+        <button class="miuda soquando" id="som" type="button" aria-pressed="true" title="Liga e desliga os efeitos sonoros">SOM</button>
+      </div>
+
+      <p class="contadorTv">no ar hoje: <b id="contadorTv">00</b></p>
+    </aside>
+  </div>
+</div>
+
+<p class="nota">
+  teclado: <b>P</b> liga · <b>1–4</b> canais · <b>N</b> próxima · <b>S</b> sap · <b>V</b> voz · <b>M</b> som<br>
+  piadas: official-joke-api.appspot.com · tradução: api.mymemory.translated.net
+</p>
+
+<script>
+(() => {
+  "use strict";
+
+  /* =====================================================
+     CONFIGURAÇÃO
+     Cada canal aponta para uma rota REST diferente:
+     tipo null  -> GET /random_joke        (objeto)
+     tipo "x"   -> GET /jokes/x/random     (array de 1)
+     ===================================================== */
+  const BASE = "https://official-joke-api.appspot.com";
+  const API_TRADUCAO = "https://api.mymemory.translated.net/get";
+  const TEMPO_LIMITE_MS = 8000;
+  const PAUSA_MS = 1500;
+  const TENTATIVAS = 3;
+
+  const CANAIS = [
+    { tipo: "general" },
+    { tipo: "programming" },
+    { tipo: "knock-knock" },
+    { tipo: null }          // canal 4: misto (/random_joke)
+  ];
+  const NOMES = { "general": "geral", "programming": "prog.", "knock-knock": "toc-toc", "dad": "pai" };
+
+  /* ---------- elementos ---------- */
+  const $ = (id) => document.getElementById(id);
+  const tela = $("tela"), quadro = $("quadro"), canvas = $("chuvisco");
+  const osdCanal = $("osdCanal"), osdAviso = $("osdAviso");
+  const statusTv = $("statusTv"), subStatus = $("subStatus");
+  const legSetup = $("legSetup"), legPunch = $("legPunch"), pausaTv = $("pausaTv"), fichaTv = $("fichaTv");
+  const motivoFalha = $("motivoFalha");
+  const painelTv = $("painelTv"), botaoEnergia = $("energia"), botaoProxima = $("proxima");
+  const botaoSap = $("sap"), botaoVoz = $("voz"), botaoSom = $("som");
+  const contadorTv = $("contadorTv");
+  const teclasCanal = [...document.querySelectorAll(".teclacanal")];
+
+  const semMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- estado do aparelho ---------- */
+  let ligada = false;
+  let canalAtual = -1;
+  let pedido = 0;             // token: invalida respostas de requisições superadas
+  let cancelador = null;      // AbortController da sintonia em andamento
+  let atual = null;           // piada no ar: { original, versao, sap }
+  let revelarAgora = null;
+  let exibidas = 0;
+  let somLigado = true;
+  let ctxAudio = null;
+  let chuviscoAtivo = false;
+  let osdTimer = null;
+
+  const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+  const definirEstado = (e) => { tela.dataset.estado = e; };
+
+  /* =====================================================
+     CAMADA DE REDE
+     ===================================================== */
+
+  // fetch com timeout próprio + repasse de um sinal externo de cancelamento
+  async function buscarJSON(url, sinalExterno) {
+    const controlador = new AbortController();
+    const relogio = setTimeout(() => controlador.abort(), TEMPO_LIMITE_MS);
+    const repassar = () => controlador.abort();
+    sinalExterno?.addEventListener("abort", repassar, { once: true });
+    try {
+      const resposta = await fetch(url, { signal: controlador.signal, cache: "no-store" });
+      // fetch não rejeita em 404/500: o status precisa ser conferido na mão
+      if (!resposta.ok) throw new Error(`A emissora respondeu com o status ${resposta.status}.`);
+      return await resposta.json();
+    } finally {
+      clearTimeout(relogio);
+      sinalExterno?.removeEventListener("abort", repassar);
+    }
+  }
+
+  // nova tentativa com espera exponencial (400ms, 800ms…)
+  async function comTentativas(tarefa, vezes, aindaVale, aoRepetir) {
+    let falha;
+    for (let i = 1; i <= vezes; i++) {
+      try { return await tarefa(); }
+      catch (erro) {
+        falha = erro;
+        if (!aindaVale() || i === vezes) break;
+        aoRepetir?.(i + 1, vezes);
+        await esperar(400 * 2 ** (i - 1));
+      }
+    }
+    throw falha;
+  }
+
+  // normaliza as duas formas de resposta da API e valida o formato
+  async function buscarPiada(canal, sinal) {
+    const url = canal.tipo ? `${BASE}/jokes/${canal.tipo}/random` : `${BASE}/random_joke`;
+    const bruto = await buscarJSON(url, sinal);
+    const piada = Array.isArray(bruto) ? bruto[0] : bruto;
+    if (typeof piada?.setup !== "string" || typeof piada?.punchline !== "string") {
+      throw new Error("A emissora transmitiu um formato inesperado.");
+    }
+    return piada;
+  }
+
+  async function traduzir(texto, sinal) {
+    const dados = await buscarJSON(`${API_TRADUCAO}?q=${encodeURIComponent(texto)}&langpair=en|pt-BR`, sinal);
+    const traducao = dados?.responseData?.translatedText ?? "";
+    if (Number(dados.responseStatus) !== 200 || !traducao || /^(MYMEMORY|QUERY LENGTH)/.test(traducao)) {
+      throw new Error("O serviço de tradução recusou a requisição.");
+    }
+    return traducao;
+  }
+
+  // a tradução pode falhar sem derrubar a transmissão: cai para o original
+  async function traduzirPiada({ setup, punchline }, sinal) {
+    try {
+      const [a, b] = await Promise.all([traduzir(setup, sinal), traduzir(punchline, sinal)]);
+      return { setup: a, punchline: b, traduzida: true };
+    } catch (erro) {
+      console.warn("Tradução indisponível:", erro);
+      return { setup, punchline, traduzida: false };
+    }
+  }
+
+  // sintonia automática: descobre os tipos disponíveis na rota /types
+  async function descobrirCanais() {
+    try {
+      const tipos = await buscarJSON(`${BASE}/types`);
+      const validos = (Array.isArray(tipos) ? tipos : []).filter((t) => typeof t === "string").slice(0, 3);
+      if (validos.length === 3) validos.forEach((t, i) => { CANAIS[i].tipo = t; });
+      rotularCanais();
+    } catch (erro) {
+      console.warn("Sintonia automática falhou; ficam os canais de fábrica.", erro);
+    }
+  }
+
+  function rotularCanais() {
+    teclasCanal.forEach((tecla, i) => {
+      const tipo = CANAIS[i].tipo;
+      tecla.querySelector(".etiqueta").textContent = tipo ? (NOMES[tipo] ?? tipo.slice(0, 7)) : "misto";
+    });
+  }
+
+  /* =====================================================
+     SOM — sintetizado na hora com WebAudio, sem arquivos
+     ===================================================== */
+  function obterAudio() {
+    if (!somLigado) return null;
+    if (!ctxAudio) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctxAudio = new AC();
+    }
+    if (ctxAudio.state === "suspended") ctxAudio.resume();
+    return ctxAudio;
+  }
+  function tom(ctx, freq, quando, dur) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(freq, quando);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.55, quando + dur);
+    g.gain.setValueAtTime(0.35, quando);
+    g.gain.exponentialRampToValueAtTime(0.001, quando + dur);
+    o.connect(g).connect(ctx.destination);
+    o.start(quando); o.stop(quando + dur + 0.03);
+  }
+  function prato(ctx, quando, dur) {
+    const fonte = ctx.createBufferSource();
+    const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
+    fonte.buffer = buf;
+    const filtro = ctx.createBiquadFilter();
+    filtro.type = "highpass"; filtro.frequency.value = 6000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.22, quando);
+    g.gain.exponentialRampToValueAtTime(0.001, quando + dur);
+    fonte.connect(filtro).connect(g).connect(ctx.destination);
+    fonte.start(quando); fonte.stop(quando + dur);
+  }
+  function baDumTss() {
+    const ctx = obterAudio(); if (!ctx) return;
+    const t = ctx.currentTime + 0.02;
+    tom(ctx, 170, t, 0.12); tom(ctx, 118, t + 0.16, 0.16); prato(ctx, t + 0.34, 0.45);
+  }
+  function blip() {
+    const ctx = obterAudio(); if (!ctx) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "square"; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.05, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    o.connect(g).connect(ctx.destination);
+    o.start(t); o.stop(t + 0.09);
+  }
+
+  /* =====================================================
+     TELA — chuvisco, OSD e animações de tubo
+     ===================================================== */
+  function iniciarChuvisco() {
+    if (chuviscoAtivo) return;
+    chuviscoAtivo = true;
+    const cctx = canvas.getContext("2d");
+    const img = cctx.createImageData(canvas.width, canvas.height);
+    (function quadroDeRuido() {
+      if (!chuviscoAtivo) return;
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = (Math.random() * 255) | 0;
+        d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+      }
+      cctx.putImageData(img, 0, 0);
+      if (semMovimento) { chuviscoAtivo = false; return; } // um quadro parado basta
+      requestAnimationFrame(quadroDeRuido);
+    })();
+  }
+  const pararChuvisco = () => { chuviscoAtivo = false; };
+
+  function osd(texto) {
+    osdAviso.textContent = texto.toUpperCase();
+    osdAviso.dataset.on = "true";
+    clearTimeout(osdTimer);
+    osdTimer = setTimeout(() => { osdAviso.dataset.on = "false"; }, 1700);
+  }
+
+  function animar(classe) {
+    if (semMovimento) return Promise.resolve();
+    return new Promise((fim) => {
+      quadro.classList.remove(classe);
+      void quadro.offsetWidth; // força reinício da animação
+      quadro.classList.add(classe);
+      quadro.addEventListener("animationend", () => { quadro.classList.remove(classe); fim(); }, { once: true });
+    });
+  }
+
+  /* =====================================================
+     PROGRAMAÇÃO — sintonizar, exibir, falhar
+     ===================================================== */
+  async function sintonizar(indice) {
+    if (!ligada) return;
+    canalAtual = indice;
+    teclasCanal.forEach((t, i) => t.setAttribute("aria-pressed", String(i === indice)));
+    osdCanal.textContent = `CH 0${indice + 1}`;
+
+    const meu = ++pedido;                 // este pedido passa a ser o único válido
+    cancelador?.abort();                  // zapping cancela a requisição anterior
+    const meuCancelador = new AbortController();
+    cancelador = meuCancelador;
+    const aindaVale = () => meu === pedido;
+
+    revelarAgora = null;
+    speechSynthesis?.cancel?.();
+    blip();
+    animar("zap");
+    statusTv.textContent = "SINTONIZANDO…";
+    subStatus.textContent = "";
+    definirEstado("sintonizando");
+    iniciarChuvisco();
+    botaoProxima.disabled = true;
+
+    try {
+      if (!navigator.onLine) throw new TypeError("sem rede");
+
+      const original = await comTentativas(
+        () => buscarPiada(CANAIS[indice], meuCancelador.signal),
+        TENTATIVAS, aindaVale,
+        (vez, total) => { subStatus.textContent = `REAJUSTANDO A ANTENA… ${vez}/${total}`; }
+      );
+      if (!aindaVale()) return;
+
+      subStatus.textContent = "TRADUZINDO LEGENDA…";
+      const versao = await traduzirPiada(original, meuCancelador.signal);
+      if (!aindaVale()) return;
+
+      await exibir(original, versao, meu);
+    } catch (erro) {
+      if (!aindaVale()) return;           // pedido superado por zapping: silêncio
+      console.error(erro);
+      mostrarSemSinal(explicarErro(erro));
+    } finally {
+      if (aindaVale()) botaoProxima.disabled = false;
+    }
+  }
+
+  async function exibir(original, versao, meu) {
+    atual = { original, versao, sap: false };
+    botaoSap.setAttribute("aria-pressed", "false");
+    pararChuvisco();
+    definirEstado("exibindo");
+
+    legSetup.textContent = versao.setup;
+    legPunch.textContent = versao.punchline;
+    legPunch.classList.remove("no-ar");
+    pausaTv.dataset.viva = "true";
+    fichaTv.textContent = `#${original.id} · ${original.type}` + (versao.traduzida ? "" : " · sem tradução");
+
+    exibidas += 1;
+    contadorTv.textContent = String(exibidas).padStart(2, "0");
+
+    const revelar = () => {
+      pausaTv.dataset.viva = "false";
+      legPunch.classList.add("no-ar");
+      baDumTss();
+      revelarAgora = null;
+    };
+    if (semMovimento) { revelar(); return; }
+
+    revelarAgora = revelar;
+    await esperar(PAUSA_MS);
+    if (meu === pedido && ligada && revelarAgora) revelarAgora();
+  }
+
+  function mostrarSemSinal(mensagem) {
+    motivoFalha.textContent = mensagem.toUpperCase();
+    definirEstado("semsinal");
+    iniciarChuvisco();
+  }
+
+  function explicarErro(erro) {
+    if (erro.name === "AbortError") return "A emissora demorou demais para responder.";
+    if (erro instanceof TypeError)  return "O sinal não chega. Verifique sua conexão.";
+    return erro.message;
+  }
+
+  /* =====================================================
+     CONTROLES DO APARELHO
+     ===================================================== */
+  async function alternarEnergia() {
+    ligada = !ligada;
+    painelTv.dataset.ligada = String(ligada);
+    botaoEnergia.setAttribute("aria-pressed", String(ligada));
+
+    if (ligada) {
+      definirEstado("bandeiras");
+      osdCanal.textContent = "CH --";
+      animar("ligando");
+      descobrirCanais();                 // sintonia automática em segundo plano
+      osd("bem-vindo");
+    } else {
+      pedido += 1;                       // invalida qualquer sintonia em curso
+      cancelador?.abort();
+      speechSynthesis?.cancel?.();
+      pararChuvisco();
+      atual = null; canalAtual = -1; revelarAgora = null;
+      teclasCanal.forEach((t) => t.setAttribute("aria-pressed", "false"));
+      botaoProxima.disabled = false;
+      await animar("desligando");
+      definirEstado("desligada");
+    }
+  }
+
+  const proxima = () => sintonizar(canalAtual < 0 ? 3 : canalAtual);
+
+  function alternarSap() {
+    if (!atual) return osd("nada no ar");
+    if (!atual.versao.traduzida) return osd("sap indisponível");
+    atual.sap = !atual.sap;
+    botaoSap.setAttribute("aria-pressed", String(atual.sap));
+    const fonte = atual.sap ? atual.original : atual.versao;
+    legSetup.textContent = fonte.setup;
+    legPunch.textContent = fonte.punchline;
+    osd(atual.sap ? "sap: original (en)" : "sap: português");
+  }
+
+  function falar() {
+    if (!("speechSynthesis" in window)) return osd("voz indisponível");
+    if (!atual) return osd("nada no ar");
+    const emIngles = atual.sap || !atual.versao.traduzida;
+    const fonte = atual.sap ? atual.original : atual.versao;
+    speechSynthesis.cancel();
+    const fala = new SpeechSynthesisUtterance(`${fonte.setup}. ${fonte.punchline}`);
+    fala.lang = emIngles ? "en-US" : "pt-BR";
+    const voz = speechSynthesis.getVoices().find((v) => v.lang?.toLowerCase().startsWith(emIngles ? "en" : "pt"));
+    if (voz) fala.voice = voz;
+    fala.rate = 0.95;
+    speechSynthesis.speak(fala);
+    osd("voz no ar");
+  }
+
+  function alternarSom() {
+    somLigado = !somLigado;
+    botaoSom.setAttribute("aria-pressed", String(somLigado));
+    osd(somLigado ? "som: ligado" : "som: mudo");
+    if (somLigado) blip();
+  }
+
+  /* ---------- ligações de eventos ---------- */
+  botaoEnergia.addEventListener("click", alternarEnergia);
+  botaoProxima.addEventListener("click", proxima);
+  botaoSap.addEventListener("click", alternarSap);
+  botaoVoz.addEventListener("click", falar);
+  botaoSom.addEventListener("click", alternarSom);
+  teclasCanal.forEach((tecla) => tecla.addEventListener("click", () => sintonizar(Number(tecla.dataset.canal))));
+
+  // tocar na tela adianta o desfecho
+  tela.addEventListener("click", () => { if (revelarAgora) revelarAgora(); });
+
+  // atalhos de teclado
+  document.addEventListener("keydown", (evento) => {
+    if (evento.repeat) return;
+    const k = evento.key.toLowerCase();
+    if (k === "p") return alternarEnergia();
+    if (!ligada) return;
+    if (["1", "2", "3", "4"].includes(k)) return sintonizar(Number(k) - 1);
+    if (k === "n") return proxima();
+    if (k === "s") return alternarSap();
+    if (k === "v") return falar();
+    if (k === "m") return alternarSom();
+  });
+
+  // queda e volta da conexão entram na metáfora: o sinal cai e volta
+  window.addEventListener("offline", () => {
+    if (!ligada) return;
+    pedido += 1; cancelador?.abort();
+    mostrarSemSinal("Sem conexão com a internet.");
+  });
+  window.addEventListener("online", () => {
+    if (!ligada) return;
+    osd("sinal restabelecido");
+    if (canalAtual >= 0) sintonizar(canalAtual);
+  });
+})();
+</script>
+</body>
+</html>
