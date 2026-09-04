@@ -98,4 +98,4 @@ async function buscarPiada() {
 
 ## 👤 Autor
 
-**Hendrick** — UFRR
+**Hendrick Silva Ferreira** — UFRR
